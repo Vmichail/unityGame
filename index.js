@@ -3,7 +3,7 @@ import { WebSocketServer } from "ws";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 var mysql = require("mysql");
-console.log("Websocket Started");
+
 //initialiaze the socket server
 const wss = new WebSocketServer({ port: 8080 });
 
@@ -27,31 +27,22 @@ wss.on("connection", function connection(client) {
       if (functionName === "GetUserData") {
         GetUserData(client, message[1]);
       }
+
       //extra functions
     }
   });
-  //   } catch (error) {
-  //     console.log("Error");
-  //   }
 });
 
 function connectDB() {
-  try {
-    var dbCon = mysql.createPool({
-      connectionLimit: 50,
-      host: "localhost",
-      user: "root",
-      password: "1234",
-      database: "testdb",
-      charset: "utf8mb4",
-    });
-    console.log(
-      `{${connectDB.name} connected to database on port: ${dbCon.port}}`
-    );
-    return dbCon;
-  } catch (error) {
-    console.log(`{${connectDB.name} error: ${error}}`);
-  }
+  var dbCon = mysql.createPool({
+    connectionLimit: 50,
+    host: "localhost",
+    user: "root",
+    password: "1234",
+    database: "testdb",
+    charset: "utf8mb4",
+  });
+  return dbCon;
 }
 
 //select user data and send it to the client. THIS IS JUST AN EXAMPLE...
