@@ -166,7 +166,7 @@ function ChangeLanguage(client, userID, languageIndex) {
  */
 function Upgrade(client, userID, upgradeCode) {
   console.log("Upgrade called with userID: ", userID, " and upgradeCode: ", upgradeCode);
-  dbcon.query("SELECT gold, upgrades,whatever FROM users WHERE userID = ?", [userID], function (err, result) {
+  dbcon.query("SELECT gold, upgrades FROM users WHERE userID = ?", [userID], function (err, result) {
     if (err || result.length === 0) {
       console.log("Mphka sto error");
       buildCommandReply(Upgrade.name, err);
