@@ -5,58 +5,6 @@ var mysql = require("mysql");
 const wss = new WebSocketServer({ port: 8080 });
 var dbcon = connectDB();
 
-const handlers = {
-  GetUserData: (client, message) => GetUserData(client, message[1]),
-  ChangeLanguage: (client, message) => ChangeLanguage(client, message[1], message[3]),
-  Upgrade: (client, message) => Upgrade(client, message[1], message[3]),
-  BananaClicked: (client, message) => BananaClicked(client, message[1]),
-};
-
-const updatesAchivementMilestones = [
-  1, 3, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72,
-];
-
-const upgradesAchievementCode = 1,
-  bananaClickedAchievementCode = 0;
-
-const userAchievementsInfo = new Map();
-
-function getUserAchievements(userID) {
-  if (!userAchievementsInfo.has(userID)) {
-    userAchievementsInfo.set(userID, {
-      totalBananasClickedMilestones: 0,
-      totalUpgradesMilestone: 0,
-      achievements: [
-        { code: 0, number: 0 },
-        { code: 1, number: 0 },
-      ],
-    });
-  }
-  console.log(`Achievements for user ${userID}: ${JSON.stringify(userAchievementsInfo.get(userID))}`);
-  return userAchievementsInfo.get(userID);
-}
-
-wss.on("connection", (client) => {
-  client.on("message", (data) => {
-    console.log("Message received: ", data.toString());
-    var message = "";
-    var userData = data.toString().split("|-+-|");
-    if (userData.length > 2) {
-      message = userData[0].toString().split("|==|");
-    } else {
-      message = data.toString().split("|==|");
-    }
-    if (message.length >= 1) {
-      var functionName = message[0];
-      if (handlers[functionName]) {
-        handlers[functionName](client, message);
-      } else {
-        console.error(`Unknown function: ${functionName}`);
-      }
-    }
-  });
-});
-
 function connectDB() {
   var dbCon = mysql.createPool({
     connectionLimit: 50,
@@ -69,22 +17,136 @@ function connectDB() {
   return dbCon;
 }
 
+wss.on("connection", (client) => {
+  client.on("message", (data) => {
+    var message = "";
+    var userData = data.toString().split("|-+-|");
+    if (userData.length > 2) {
+      message = userData[0].toString().split("|==|");
+    } else {
+      message = data.toString().split("|==|");
+    }
+    if (message.length >= 1) {
+      var functionName = message[0];
+      if (handlers[functionName]) {
+        handlers[functionName](client, message);
+      } else {
+        client.send(
+          JSON.stringify({
+            Function: functionName + "Reply",
+            Data: ["Unknown function name"],
+          })
+        );
+      }
+    }
+  });
+});
+
+const updatesAchivementMilestones = [1, 3, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72];
+const upgradesAchievementCode = 1;
+const bananaClickedAchievementCode = 0;
+const userAchievementsInfo = new Map();
+
+/**
+ * Object that stores in server memory the achievements of the user
+ * @param {string} userID
+ * @returns
+ */
+function getUserAchievements(userID) {
+  if (!userAchievementsInfo.has(userID)) {
+    userAchievementsInfo.set(userID, {
+      totalBananasClickedMilestones: 0,
+      totalUpgradesMilestone: 0,
+      achievements: [
+        { code: 0, number: 0 },
+        { code: 1, number: 0 },
+      ],
+    });
+  }
+  return userAchievementsInfo.get(userID);
+}
+
+/**
+ * Handler object that validates received messages and calls the appropriate function
+ */
+const handlers = {
+  GetUserData: (client, message) => {
+    const validationError = validateReceivedMessage(message, 4, ["string", "string", "string", "boolean"]);
+    if (validationError) {
+      console.error(`Validation error: ${validationError}`);
+      client.send(JSON.stringify({ Function: GetUserData.name + "Reply", Data: [validationError] }));
+      return;
+    }
+    GetUserData(client, message[1]);
+  },
+  ChangeLanguage: (client, message) => {
+    const validationError = validateReceivedMessage(message, 4, ["string", "string", "string", "number"]);
+    if (validationError) {
+      client.send(JSON.stringify({ Function: ChangeLanguage.name + "Reply", Data: [validationError] }));
+      return;
+    }
+    ChangeLanguage(client, message[1], message[3]);
+  },
+  Upgrade: (client, message) => {
+    const validationError = validateReceivedMessage(message, 4, ["string", "string", "string", "number"]);
+    if (validationError) {
+      client.send(JSON.stringify({ Function: Upgrade.name + "Reply", Data: [validationError] }));
+      return;
+    }
+    Upgrade(client, message[1], message[3]);
+  },
+  BananaClicked: (client, message) => {
+    const validationError = validateReceivedMessage(message, 3, ["string", "string", "string"]);
+    if (validationError) {
+      client.send(JSON.stringify({ Function: BananaClicked.name + "Reply", Data: [validationError] }));
+      return;
+    }
+    BananaClicked(client, message[1]);
+  },
+};
+
+/**
+ * Validates the message received from the client
+ * @param {string,number,boolean} message
+ * @param {string} expectedParams
+ * @returns
+ */
+function validateReceivedMessage(message, minLength, expectedParams) {
+  if (message.length < minLength) {
+    return `Expected at least ${minLength} parameters, but got ${message.length}.`;
+  }
+  let passedCheck = true;
+  for (let i = 0; i < expectedParams.length; i++) {
+    const receivedParam = message[i];
+    if (expectedParams[i] === "number" && isNaN(Number(receivedParam))) {
+      passedCheck = false;
+    } else if (expectedParams[i] === "boolean" && !["true", "false"].includes(receivedParam.toLowerCase())) {
+      passedCheck = false;
+    } else if (expectedParams[i] === "string" && typeof receivedParam !== expectedParams[i]) {
+      passedCheck = false;
+    }
+    if (!passedCheck) {
+      return `Expected parameter ${receivedParam} to be of type ${expectedParams[i]}, but got ${typeof receivedParam}.`;
+    }
+  }
+  return null;
+}
+
 /**
  * Checks if you have a user in the database and sends the data to the client
  * If the user does not exist, it creates a new user with default values
- * @param {*} client
- * @param {String} userID is the user unique identifier
+ * @param {WebSocket} client
+ * @param {string} userID
  */
 function GetUserData(client, userID) {
-  console.log("GetUserData called with userID: ", userID);
   dbcon.query("SELECT upgrades,gold,language FROM users WHERE userID = ?", [userID], function (err, result) {
     if (err) {
-      console.error("Error fetching user data: ", err);
+      client.send(commonReplyToClient(GetUserData.name, err));
       return;
     }
 
     if (result.length === 0) {
-      result = createUser(userID, result);
+      result = createUser(client, userID, result);
     }
 
     const achievementsInfo = getUserAchievements(userID);
@@ -102,13 +164,12 @@ function GetUserData(client, userID) {
         }),
       ],
     };
-    console.log(`${GetUserData.name} sent the following data to client:${JSON.stringify(replyData)}`);
     client.send(JSON.stringify(replyData));
   });
 }
 
-function createUser(userID, result) {
-  insertDefaultUserData(userID);
+function createUser(client, userID, result) {
+  insertDefaultUserData(client, userID);
   result = [
     {
       upgrades: JSON.stringify([
@@ -122,7 +183,7 @@ function createUser(userID, result) {
   return result;
 }
 
-function insertDefaultUserData(userID) {
+function insertDefaultUserData(client, userID) {
   dbcon.query(
     "INSERT INTO users (userID, upgrades, gold, language) VALUES (?, ?, ?, ?)",
     [
@@ -134,11 +195,9 @@ function insertDefaultUserData(userID) {
       0,
       0,
     ],
-    function (err, result) {
+    function (err) {
       if (err) {
-        console.error("Error inserting default user data: ", err);
-      } else {
-        console.log(`Inserted default data for userID: ${userID}`);
+        client.send(commonReplyToClient(GetUserData.name, err));
       }
     }
   );
@@ -146,30 +205,27 @@ function insertDefaultUserData(userID) {
 
 /**
  * Updates the language of the user
- * @param {*} client
- * @param {String} userID
- * @param {Number} languageIndex
+ * @param {WebSocket} client
+ * @param {string} userID
+ * @param {number} languageIndex
  */
 function ChangeLanguage(client, userID, languageIndex) {
-  console.log("ChangeLanguage called with userID: ", userID, " and languageIndex: ", languageIndex);
   dbcon.query("UPDATE users SET language = ? WHERE userID = ?", [languageIndex, userID], function (err) {
-    client.send(buildCommandReply(ChangeLanguage.name, err));
+    client.send(commonReplyToClient(ChangeLanguage.name, err));
   });
 }
 
 /**
  * Updates the number of upgrades of the user and the remaining gold
  * Checks if user update meets a milestone and updates the upgrade achievements
- * @param {*} client
- * @param {*} userID
- * @param {*} upgradeCode
+ * @param {WebSocket} client
+ * @param {string} userID
+ * @param {number} upgradeCode
  */
 function Upgrade(client, userID, upgradeCode) {
-  console.log("Upgrade called with userID: ", userID, " and upgradeCode: ", upgradeCode);
   dbcon.query("SELECT gold, upgrades FROM users WHERE userID = ?", [userID], function (err, result) {
     if (err || result.length === 0) {
-      console.log("Mphka sto error");
-      buildCommandReply(Upgrade.name, err);
+      client.send(commonReplyToClient(Upgrade.name, err ? err : "Result length is 0"));
       return;
     }
     let userGold = result[0].gold;
@@ -179,7 +235,7 @@ function Upgrade(client, userID, upgradeCode) {
     let cost = calculateUpgradeCost(upgradeCount);
 
     if (userGold < cost) {
-      client.send(JSON.stringify({ Function: "UpgradeReply", Data: ["false"] }));
+      client.send(commonReplyToClient(Upgrade.name, "Not enough gold"));
       return;
     }
 
@@ -195,7 +251,7 @@ function Upgrade(client, userID, upgradeCode) {
       "UPDATE users SET gold = ?, upgrades = ? WHERE userID = ?",
       [userGold, JSON.stringify(upgrades), userID],
       function (err) {
-        buildCommandReply(Upgrade.name, err);
+        client.send(commonReplyToClient(Upgrade.name, err));
       }
     );
   });
@@ -204,7 +260,6 @@ function Upgrade(client, userID, upgradeCode) {
 function unlockUpdatesAchievements(achievementInfo, achievementNumber) {
   if (updatesAchivementMilestones.includes(achievementNumber)) {
     achievementInfo.totalUpgradesMilestone += 1;
-    console.log(`Milestones unlocked for Updates:  - ${achievementNumber}`);
   }
 }
 
@@ -221,66 +276,62 @@ function calculateUpgradeCost(upgradeCount) {
 /**
  * Updates the gold of the user on the banana click
  * and checks if the user has reached a milestone
- * @param {*} client
- * @param {*} userID
+ * @param {WebSocket} client
+ * @param {string} userID
  */
 function BananaClicked(client, userID) {
   dbcon.query("SELECT gold, upgrades FROM users WHERE userID = ?", [userID], function (err, result) {
     if (err || result.length === 0) {
-      client.send(JSON.stringify({ Function: "BananaClickedReply", Data: ["false"] }));
+      client.send(commonReplyToClient(BananaClicked.name, err ? err : "Result length is 0"));
       return;
     }
     let userGold = result[0].gold;
     let upgrades = JSON.parse(result[0].upgrades);
-    let bananaGold = 1 + upgrades[0].number;
     const allAchievementInfos = getUserAchievements(userID);
     let clickedBananaMilestones = allAchievementInfos.totalBananasClickedMilestones;
     let clickedAchievementMilestones = allAchievementInfos.totalUpgradesMilestone;
-    let bananaClickedAchievement = allAchievementInfos.achievements.find(
-      (ach) => ach.code === bananaClickedAchievementCode
-    );
+    let bananaClickedAchievement = allAchievementInfos.achievements.find((ach) => ach.code === bananaClickedAchievementCode);
+
     bananaClickedAchievement.number++;
     unlockBananaClickAchievements(allAchievementInfos, bananaClickedAchievement.number);
 
-    userGold += bananaGold + clickedBananaMilestones + clickedAchievementMilestones;
+    userGold += 1 + upgrades[0].number + bananaGold + clickedBananaMilestones + clickedAchievementMilestones;
 
     dbcon.query("UPDATE users SET gold = ? WHERE userID = ?", [userGold, userID], function (err) {
-      client.send(buildCommandReply(BananaClicked.name, err));
+      client.send(commonReplyToClient(BananaClicked.name, err));
     });
   });
 }
 
+/**
+ * Checks if totalBananasClicked meets a milestone and updates the banana click achievement
+ * @param {*} achievementsInfo
+ * @param {number} totalBananasClicked
+ */
 function unlockBananaClickAchievements(achievementsInfo, totalBananasClicked) {
   let updated = false;
   if (totalBananasClicked <= 100) {
     if (totalBananasClicked % 10 === 0) {
       achievementsInfo.totalBananasClickedMilestones += 1;
-      updated = true;
     }
   } else if (totalBananasClicked <= 1000) {
     if (totalBananasClicked % 50 === 0) {
       achievementsInfo.totalBananasClickedMilestones += 1;
-      updated = true;
     }
   } else if (totalBananasClicked <= 5000) {
     if (totalBananasClicked % 100 === 0) {
       achievementsInfo.totalBananasClickedMilestones += 1;
-      updated = true;
     }
   } else if (totalBananasClicked <= 10000) {
     if (totalBananasClicked % 500 === 0) {
       achievementsInfo.totalBananasClickedMilestones += 1;
-      updated = true;
     }
-  }
-  if (updated) {
-    console.log(`Achievement unlocked: bananaAchivement.code - ${totalBananasClicked}`);
   }
 }
 
-function buildCommandReply(functionName, err) {
+function commonReplyToClient(functionName, error) {
   return JSON.stringify({
     Function: functionName + "Reply",
-    Data: [err ? "false" : "true"],
+    Data: [error ? error : "true"],
   });
 }
