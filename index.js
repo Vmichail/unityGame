@@ -1,12 +1,20 @@
 import { WebSocketServer } from "ws";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-var mysql = require("mysql");
+const mysql = require("mysql");
 const wss = new WebSocketServer({ port: 8080 });
-var dbcon = connectDB();
+const dbcon = connectDB();
+
+//Achievements constants
+const updatesAchivementMilestones = [1, 3, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72];
+const upgradesAchievementCode = 1;
+const bananaClickedAchievementCode = 0;
+const userAchievementsInfo = new Map();
+
+const maxUpgradeCount = 36;
 
 function connectDB() {
-  var dbCon = mysql.createPool({
+  const dbCon = mysql.createPool({
     connectionLimit: 50,
     host: "localhost",
     user: "vmichail",
@@ -19,15 +27,15 @@ function connectDB() {
 
 wss.on("connection", (client) => {
   client.on("message", (data) => {
-    var message = "";
-    var userData = data.toString().split("|-+-|");
+    let message = "";
+    const userData = data.toString().split("|-+-|");
     if (userData.length > 2) {
       message = userData[0].toString().split("|==|");
     } else {
       message = data.toString().split("|==|");
     }
     if (message.length >= 1) {
-      var functionName = message[0];
+      const functionName = message[0];
       if (handlers[functionName]) {
         handlers[functionName](client, message);
       } else {
@@ -41,11 +49,6 @@ wss.on("connection", (client) => {
     }
   });
 });
-
-const updatesAchivementMilestones = [1, 3, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72];
-const upgradesAchievementCode = 1;
-const bananaClickedAchievementCode = 0;
-const userAchievementsInfo = new Map();
 
 /**
  * Object that stores in server memory the achievements of the user
@@ -73,7 +76,6 @@ const handlers = {
   GetUserData: (client, message) => {
     const validationError = validateReceivedMessage(message, 4, ["string", "string", "string", "boolean"]);
     if (validationError) {
-      console.error(`Validation error: ${validationError}`);
       client.send(JSON.stringify({ Function: GetUserData.name + "Reply", Data: [validationError] }));
       return;
     }
@@ -151,7 +153,7 @@ function GetUserData(client, userID) {
 
     const achievementsInfo = getUserAchievements(userID);
 
-    var replyData = {
+    const replyData = {
       Function: GetUserData.name + "Reply",
       Data: [
         JSON.stringify({
@@ -214,7 +216,6 @@ function ChangeLanguage(client, userID, languageIndex) {
     client.send(commonReplyToClient(ChangeLanguage.name, err));
   });
 }
-
 /**
  * Updates the number of upgrades of the user and the remaining gold
  * Checks if user update meets a milestone and updates the upgrade achievements
@@ -228,14 +229,20 @@ function Upgrade(client, userID, upgradeCode) {
       client.send(commonReplyToClient(Upgrade.name, err ? err : "Result length is 0"));
       return;
     }
-    let userGold = result[0].gold;
-    let upgrades = JSON.parse(result[0].upgrades);
 
-    let upgradeCount = upgrades[upgradeCode].number + 1;
-    let cost = calculateUpgradeCost(upgradeCount);
+    let userGold = result[0].gold;
+    const upgrades = JSON.parse(result[0].upgrades);
+    const upgradeCount = upgrades[upgradeCode].number + 1;
+    if (upgradeCount > maxUpgradeCount || upgradeCode < 0) {
+      client.send(
+        commonReplyToClient(Upgrade.name, `Max upgrade is${maxUpgradeCount} but ${upgradeCode} found on user:${userID}`)
+      );
+      return;
+    }
+    const cost = calculateUpgradeCost(upgradeCount);
 
     if (userGold < cost) {
-      client.send(commonReplyToClient(Upgrade.name, "Not enough gold"));
+      client.send(commonReplyToClient(Upgrade.name, `Not enough gold - UpdateCost:${cost} - UserGold:${userGold}`));
       return;
     }
 
@@ -243,7 +250,7 @@ function Upgrade(client, userID, upgradeCode) {
     userGold -= cost;
 
     const allAchievementInfos = getUserAchievements(userID);
-    let upgradesAchievement = allAchievementInfos.achievements.find((ach) => ach.code === upgradesAchievementCode);
+    const upgradesAchievement = allAchievementInfos.achievements.find((ach) => ach.code === upgradesAchievementCode);
     upgradesAchievement.number += 1;
     unlockUpdatesAchievements(allAchievementInfos, upgradesAchievement.number);
 
@@ -266,10 +273,14 @@ function unlockUpdatesAchievements(achievementInfo, achievementNumber) {
 function calculateUpgradeCost(upgradeCount) {
   if (upgradeCount <= 10) {
     return 10 * upgradeCount;
-  } else if (upgradeCount <= 20) {
+  } else if (upgradeCount <= 18) {
     return 100 + 50 * (upgradeCount % 10);
+  } else if (upgradeCount <= 23) {
+    return 500 + 100 * (upgradeCount % 18);
+  } else if (upgradeCount <= 31) {
+    return 1000 + 500 * (upgradeCount % 23);
   } else {
-    return 1000 + 500 * (upgradeCount % 20);
+    return 5000 + 1000 * (upgradeCount % 31);
   }
 }
 
@@ -286,16 +297,16 @@ function BananaClicked(client, userID) {
       return;
     }
     let userGold = result[0].gold;
-    let upgrades = JSON.parse(result[0].upgrades);
+    const upgrades = JSON.parse(result[0].upgrades);
     const allAchievementInfos = getUserAchievements(userID);
-    let clickedBananaMilestones = allAchievementInfos.totalBananasClickedMilestones;
-    let clickedAchievementMilestones = allAchievementInfos.totalUpgradesMilestone;
-    let bananaClickedAchievement = allAchievementInfos.achievements.find((ach) => ach.code === bananaClickedAchievementCode);
+    const clickedBananaMilestones = allAchievementInfos.totalBananasClickedMilestones;
+    const clickedAchievementMilestones = allAchievementInfos.totalUpgradesMilestone;
+    const bananaClickedAchievement = allAchievementInfos.achievements.find((ach) => ach.code === bananaClickedAchievementCode);
 
     bananaClickedAchievement.number++;
     unlockBananaClickAchievements(allAchievementInfos, bananaClickedAchievement.number);
 
-    userGold += 1 + upgrades[0].number + bananaGold + clickedBananaMilestones + clickedAchievementMilestones;
+    userGold += 1 + upgrades[0].number + clickedBananaMilestones + clickedAchievementMilestones;
 
     dbcon.query("UPDATE users SET gold = ? WHERE userID = ?", [userGold, userID], function (err) {
       client.send(commonReplyToClient(BananaClicked.name, err));
@@ -309,21 +320,24 @@ function BananaClicked(client, userID) {
  * @param {number} totalBananasClicked
  */
 function unlockBananaClickAchievements(achievementsInfo, totalBananasClicked) {
-  let updated = false;
   if (totalBananasClicked <= 100) {
     if (totalBananasClicked % 10 === 0) {
       achievementsInfo.totalBananasClickedMilestones += 1;
     }
-  } else if (totalBananasClicked <= 1000) {
+  } else if (totalBananasClicked <= 500) {
     if (totalBananasClicked % 50 === 0) {
       achievementsInfo.totalBananasClickedMilestones += 1;
     }
-  } else if (totalBananasClicked <= 5000) {
+  } else if (totalBananasClicked <= 1000) {
     if (totalBananasClicked % 100 === 0) {
       achievementsInfo.totalBananasClickedMilestones += 1;
     }
-  } else if (totalBananasClicked <= 10000) {
+  } else if (totalBananasClicked <= 5000) {
     if (totalBananasClicked % 500 === 0) {
+      achievementsInfo.totalBananasClickedMilestones += 1;
+    }
+  } else if (totalBananasClicked <= 10000) {
+    if (totalBananasClicked % 1000 === 0) {
       achievementsInfo.totalBananasClickedMilestones += 1;
     }
   }
