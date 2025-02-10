@@ -1,8 +1,8 @@
 /**
  * Banana Clicker Prototype Game Backend Service
  *
- * WebSocket server handling game logic, user data management, and stores users achievements in server memory.
- * Uses MySQL for persistent storage and WebSockets for real-time communication.
+ * WebSocket server handling game logic, user data management, and users achievements.
+ * Uses MySQL for persistent storage and WebSockets for real-time communication and in server memory for users achievements.
  *
  * Author: Vasilis Michail
  * Version: 1.0.0
@@ -127,32 +127,32 @@ const handlers = {
 /**
  * Validates the message received from the client
  * @param {string,number,boolean} message
- * @param {string} expectedParams
+ * @param {string} expectedParamsTypes
  * @returns
  */
-function validateReceivedMessage(message, minLength, expectedParams) {
+function validateReceivedMessage(message, minLength, expectedParamsTypes) {
   if (message.length < minLength) {
     return `Expected at least ${minLength} parameters, but got ${message.length}.`;
   }
   let passedCheck = true;
-  for (let i = 0; i < expectedParams.length; i++) {
+  for (let i = 0; i < expectedParamsTypes.length; i++) {
     const receivedParam = message[i];
-    if (expectedParams[i] === "number" && isNaN(Number(receivedParam))) {
+    if (expectedParamsTypes[i] === "number" && isNaN(Number(receivedParam))) {
       passedCheck = false;
-    } else if (expectedParams[i] === "boolean" && !["true", "false"].includes(receivedParam.toLowerCase())) {
+    } else if (expectedParamsTypes[i] === "boolean" && !["true", "false"].includes(receivedParam.toLowerCase())) {
       passedCheck = false;
-    } else if (expectedParams[i] === "string" && typeof receivedParam !== expectedParams[i]) {
+    } else if (expectedParamsTypes[i] === "string" && typeof receivedParam !== expectedParamsTypes[i]) {
       passedCheck = false;
     }
     if (!passedCheck) {
-      return `Expected parameter ${receivedParam} to be of type ${expectedParams[i]}, but got ${typeof receivedParam}.`;
+      return `Expected parameter ${receivedParam} to be of type ${expectedParamsTypes[i]}, but got ${typeof receivedParam}.`;
     }
   }
   return null;
 }
 
 /**
- * Checks if you have a user in the database and sends the data to the client
+ * Checks if user exists in database and sends the data to the client
  * If the user does not exist, it creates a new user with default values
  * @param {WebSocket} client
  * @param {string} userID
@@ -233,6 +233,7 @@ function ChangeLanguage(client, userID, languageIndex) {
     client.send(commonReplyToClient(ChangeLanguage.name, err));
   });
 }
+
 /**
  * Updates the number of upgrades of the user and the remaining gold
  * Checks if user update meets a milestone and updates the upgrade achievements
