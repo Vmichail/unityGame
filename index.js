@@ -1,3 +1,13 @@
+/**
+ * Banana Clicker Prototype Game Backend Service
+ *
+ * WebSocket server handling game logic, user data management, and stores users achievements in server memory.
+ * Uses MySQL for persistent storage and WebSockets for real-time communication.
+ *
+ * Author: Vasilis Michail
+ * Version: 1.0.0
+ */
+
 import { WebSocketServer } from "ws";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
@@ -6,9 +16,16 @@ const wss = new WebSocketServer({ port: 8080 });
 const dbcon = connectDB();
 
 //Achievements constants
-const updatesAchivementMilestones = [1, 3, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72];
+const updatesAchievementMilestones = [1, 3, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72];
 const upgradesAchievementCode = 1;
 const bananaClickedAchievementCode = 0;
+const bananaClickedAcievementTiers = [
+  { threshold: 100, divisor: 10 },
+  { threshold: 500, divisor: 50 },
+  { threshold: 1000, divisor: 100 },
+  { threshold: 5000, divisor: 500 },
+  { threshold: 10000, divisor: 1000 },
+];
 const userAchievementsInfo = new Map();
 
 const maxUpgradeCount = 36;
@@ -265,23 +282,17 @@ function Upgrade(client, userID, upgradeCode) {
 }
 
 function unlockUpdatesAchievements(achievementInfo, achievementNumber) {
-  if (updatesAchivementMilestones.includes(achievementNumber)) {
+  if (updatesAchievementMilestones.includes(achievementNumber)) {
     achievementInfo.totalUpgradesMilestone += 1;
   }
 }
 
 function calculateUpgradeCost(upgradeCount) {
-  if (upgradeCount <= 10) {
-    return 10 * upgradeCount;
-  } else if (upgradeCount <= 18) {
-    return 100 + 50 * (upgradeCount % 10);
-  } else if (upgradeCount <= 23) {
-    return 500 + 100 * (upgradeCount % 18);
-  } else if (upgradeCount <= 31) {
-    return 1000 + 500 * (upgradeCount % 23);
-  } else {
-    return 5000 + 1000 * (upgradeCount % 31);
-  }
+  if (upgradeCount <= 10) return 10 * upgradeCount;
+  if (upgradeCount <= 18) return 100 + 50 * (upgradeCount % 10);
+  if (upgradeCount <= 23) return 500 + 100 * (upgradeCount % 18);
+  if (upgradeCount <= 31) return 1000 + 500 * (upgradeCount % 23);
+  return 5000 + 1000 * (upgradeCount % 31);
 }
 
 /**
@@ -320,25 +331,10 @@ function BananaClicked(client, userID) {
  * @param {number} totalBananasClicked
  */
 function unlockBananaClickAchievements(achievementsInfo, totalBananasClicked) {
-  if (totalBananasClicked <= 100) {
-    if (totalBananasClicked % 10 === 0) {
+  for (const tier of bananaClickedAcievementTiers) {
+    if (totalBananasClicked <= tier.threshold && totalBananasClicked % tier.divisor === 0) {
       achievementsInfo.totalBananasClickedMilestones += 1;
-    }
-  } else if (totalBananasClicked <= 500) {
-    if (totalBananasClicked % 50 === 0) {
-      achievementsInfo.totalBananasClickedMilestones += 1;
-    }
-  } else if (totalBananasClicked <= 1000) {
-    if (totalBananasClicked % 100 === 0) {
-      achievementsInfo.totalBananasClickedMilestones += 1;
-    }
-  } else if (totalBananasClicked <= 5000) {
-    if (totalBananasClicked % 500 === 0) {
-      achievementsInfo.totalBananasClickedMilestones += 1;
-    }
-  } else if (totalBananasClicked <= 10000) {
-    if (totalBananasClicked % 1000 === 0) {
-      achievementsInfo.totalBananasClickedMilestones += 1;
+      break;
     }
   }
 }
